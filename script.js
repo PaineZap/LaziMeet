@@ -8,8 +8,8 @@ let peer = null;
 let localStream = null;
 let currentRoomId = null;
 let myName = "GenZ User";
+let isHost = false;
 let peersList = {}; // peerId -> { call, stream, name }
-let connectedUsers = []; // List of participants
 
 let isMicMuted = false;
 let isCamOff = false;
@@ -89,21 +89,18 @@ window.addEventListener('DOMContentLoaded', () => {
     const roomParam = urlParams.get('room');
     if (roomParam) {
         roomCodeInput.value = roomParam;
-        // Switch to join tab
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         document.querySelector('[data-tab="join"]').classList.add('active');
         document.getElementById('join-tab').classList.add('active');
     }
 
-    // Default random names for fun
     const randomNames = ['Nam Phong', 'Thảo My', 'Gia Hân', 'Hoàng Long', 'Minh Thư', 'Quốc Bảo', 'Khánh Linh'];
     const defaultName = randomNames[Math.floor(Math.random() * randomNames.length)];
     creatorNameInput.value = defaultName;
     joinNameInput.value = defaultName;
 });
 
-// Toast notification helper
 function showToast(message, icon = 'fa-solid fa-sparkles') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -113,7 +110,6 @@ function showToast(message, icon = 'fa-solid fa-sparkles') {
     setTimeout(() => toast.remove(), 3000);
 }
 
-// Get initials for avatar
 function getInitials(name) {
     if (!name) return 'U';
     const parts = name.trim().split(' ');
@@ -123,7 +119,6 @@ function getInitials(name) {
     return name.substring(0, 2).toUpperCase();
 }
 
-// --- MEDIA INITIALIZATION ---
 async function initLocalMedia() {
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -131,8 +126,8 @@ async function initLocalMedia() {
         localVideo.play();
         localAvatarFallback.style.display = 'none';
     } catch (err) {
-        console.warn('Không thể bật camera/mic hoặc chưa cấp quyền:', err);
-        showToast('Không tìm thấy Camera/Mic. Đang vào phòng ở chế độ chỉ nghe/nhìn.', 'fa-solid fa-triangle-exclamation');
+        console.warn('Không thể bật camera/mic:', err);
+        showToast('Không tìm thấy Camera/Mic. Vào phòng chế độ chỉ nghe/nhìn.', 'fa-solid fa-triangle-exclamation');
         try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
             localAvatarFallback.style.display = 'flex';
@@ -143,60 +138,58 @@ async function initLocalMedia() {
     }
 }
 
-// --- ROOM CREATION & JOINING ---
 btnCreateRoom.addEventListener('click', async () => {
     const name = creatorNameInput.value.trim() || 'GenZ Host';
     myName = name;
-    const roomId = 'lazimeet-' + Math.random().toString(36.substring(2, 9));
+    isHost = true;
+    const roomId = 'lazimeet-' + Math.random().toString(36).substring(2, 9);
     await startMeeting(roomId, true);
 });
 
 btnJoinRoom.addEventListener('click', async () => {
     const name = joinNameInput.value.trim() || 'GenZ Guest';
     myName = name;
+    isHost = false;
     let roomInput = roomCodeInput.value.trim();
     if (!roomInput) {
         showToast('Vui lòng nhập mã phòng hoặc đường dẫn!', 'fa-solid fa-circle-exclamation');
         return;
     }
-    // Extract room ID if full URL was pasted
     if (roomInput.includes('room=')) {
         try {
             const url = new URL(roomInput.includes('http') ? roomInput : 'https://' + roomInput);
             roomInput = url.searchParams.get('room') || roomInput;
-        } catch (e) {
-            // fallback
-        }
+        } catch (e) {}
     }
     await startMeeting(roomInput, false);
 });
 
-async function startMeeting(roomId, isHost) {
+async function startMeeting(roomId, asHost) {
     currentRoomId = roomId;
     showToast('Đang kết nối vào phòng họp...', 'fa-solid fa-spinner fa-spin');
     
     await initLocalMedia();
 
-    // Setup local user label & avatar
     localUserLabel.textContent = `${myName} (Bạn)`;
     localAvatarInitials.textContent = getInitials(myName);
 
-    // Initialize PeerJS (using public PeerJS cloud server)
-    // Peer ID format: room-id-random or host flag
-    const peerId = roomId + '-' + Math.random().toString(36).substring(2, 6);
-    
-    peer = new Peer(peerId, {
-        // Using standard PeerJS cloud settings
-        debug: 1
-    });
+    // If host, peerId = roomId + '-host'. If guest, peerId = roomId + '-guest-' + random
+    // This allows predictable host addressing in PeerJS cloud!
+    const peerId = asHost ? (roomId + '-host') : (roomId + '-guest-' + Math.random().toString(36).substring(2, 6));
+
+    peer = new Peer(peerId, { debug: 1 });
 
     peer.on('open', (id) => {
-        console.log('Peer connected with ID:', id);
+        console.log('My peer ID:', id);
         transitionToMeetingScreen();
+
+        if (!asHost) {
+            // Connect to host
+            connectToHost(roomId);
+        }
     });
 
     peer.on('call', (call) => {
-        // Answer incoming call
         call.answer(localStream);
         setupCallEventHandlers(call);
     });
@@ -207,8 +200,31 @@ async function startMeeting(roomId, isHost) {
 
     peer.on('error', (err) => {
         console.error('PeerJS error:', err);
-        showToast('Lỗi kết nối PeerJS: ' + err.type, 'fa-solid fa-triangle-exclamation');
+        if (err.type === 'unavailable-id') {
+            showToast('Phòng này đã có chủ hoặc mã phòng trùng. Thử lại nhé!', 'fa-solid fa-triangle-exclamation');
+        } else {
+            showToast('Lỗi kết nối: ' + err.type, 'fa-solid fa-triangle-exclamation');
+        }
     });
+}
+
+function connectToHost(roomId) {
+    const hostPeerId = roomId + '-host';
+    
+    // Connect data channel to host
+    const conn = peer.connect(hostPeerId, { metadata: { name: myName } });
+    if (conn) {
+        setupDataConnectionHandlers(conn);
+        conn.on('open', () => {
+            conn.send({ type: 'join', name: myName, peerId: peer.id });
+        });
+    }
+
+    // Call host
+    const call = peer.call(hostPeerId, localStream, { metadata: { name: myName } });
+    if (call) {
+        setupCallEventHandlers(call);
+    }
 }
 
 function transitionToMeetingScreen() {
@@ -216,65 +232,30 @@ function transitionToMeetingScreen() {
     meetingScreen.classList.add('active');
     currentRoomBadge.textContent = `Phòng: ${currentRoomId}`;
     
-    // Setup share link input
     const shareUrl = window.location.origin + window.location.pathname + '?room=' + currentRoomId;
     shareLinkInput.value = shareUrl;
 
-    // Start timer
     callStartTime = Date.now();
     timerInterval = setInterval(updateMeetingTimer, 1000);
 
-    // Add self to participants list
     updateParticipantsList();
     showToast('Đã vào phòng họp thành công!', 'fa-solid fa-circle-check');
-
-    // If we joined an existing room, we need to discover peers in the room.
-    // Since PeerJS cloud doesn't have built-in room broadcasting without a signaling server,
-    // we connect by trying to reach potential host IDs or broadcast to room peers.
-    // In this simplified pure client setup, when joining via room link, we attempt to connect to the host peer ID (room-id-host).
-    if (!currentRoomId.includes('host')) {
-        // Try connecting to potential host ID format: roomId + '-host' or scan
-        connectToHost(currentRoomId);
-    }
 }
 
-function connectToHost(roomId) {
-    // We can try to connect to a standard host peer ID
-    const hostPeerId = roomId + '-host';
-    const conn = peer.connect(hostPeerId);
-    setupDataConnectionHandlers(conn);
-
-    const call = peer.call(hostPeerId, localStream, { metadata: { name: myName } });
-    if (call) {
-        setupCallEventHandlers(call);
-    }
-}
-
-// If we are host, let's register with a host suffix so others can find us easily
-// Actually, let's also allow direct connection when user enters room code.
-// Let's enhance Peer connection logic:
-window.addEventListener('load', () => {
-    // Check if we need to auto connect as host if no suffix
-});
-
-// Call Event Handlers for WebRTC Video/Audio Streams
 function setupCallEventHandlers(call) {
     call.on('stream', (remoteStream) => {
         const remotePeerId = call.peer;
         if (!peersList[remotePeerId]) {
-            peersList[remotePeerId] = { call: call, stream: remoteStream, name: call.metadata?.name || 'Thành viên' };
-            addRemoteVideoCard(remotePeerId, remoteStream, peersList[remotePeerId].name);
+            const peerName = call.metadata?.name || 'Thành viên';
+            peersList[remotePeerId] = { call: call, stream: remoteStream, name: peerName };
+            addRemoteVideoCard(remotePeerId, remoteStream, peerName);
             updateParticipantsList();
-            showToast(`${peersList[remotePeerId].name} đã tham gia phòng`, 'fa-solid fa-user-plus');
+            showToast(`${peerName} đã tham gia phòng`, 'fa-solid fa-user-plus');
         }
     });
 
     call.on('close', () => {
         removeRemoteVideoCard(call.peer);
-    });
-
-    call.on('error', (err) => {
-        console.error('Call error:', err);
     });
 }
 
@@ -282,19 +263,25 @@ function setupDataConnectionHandlers(conn) {
     conn.on('data', (data) => {
         if (data.type === 'chat') {
             appendChatMessage(data.sender, data.text, 'theirs');
-            // Show unread badge if sidebar closed
             if (sidebarPanel.classList.contains('hidden')) {
                 let currentCount = parseInt(badgeUnread.textContent) || 0;
                 badgeUnread.textContent = currentCount + 1;
                 badgeUnread.style.display = 'inline-block';
             }
+        } else if (data.type === 'join' && isHost) {
+            // If we are host and someone joined, we can also call them if not already called
+            const newPeerId = data.peerId;
+            if (newPeerId && !peersList[newPeerId]) {
+                const call = peer.call(newPeerId, localStream, { metadata: { name: myName } });
+                if (call) {
+                    setupCallEventHandlers(call);
+                }
+            }
         }
     });
 }
 
-// --- VIDEO UI MANAGEMENT ---
 function addRemoteVideoCard(peerId, stream, name) {
-    // Check if container already exists
     if (document.getElementById(`video-card-${peerId}`)) return;
 
     const card = document.createElement('div');
@@ -337,7 +324,6 @@ function removeRemoteVideoCard(peerId) {
     updateParticipantsList();
 }
 
-// --- CONTROLS & ACTIONS ---
 btnToggleMic.addEventListener('click', () => {
     if (!localStream) return;
     const audioTrack = localStream.getAudioTracks()[0];
@@ -365,14 +351,12 @@ btnToggleCam.addEventListener('click', () => {
     }
 });
 
-// Screen Sharing
 btnShareScreen.addEventListener('click', async () => {
     try {
         if (!isScreenSharing) {
             screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             const screenTrack = screenStream.getVideoTracks()[0];
             
-            // Replace track in all active calls
             for (let peerId in peersList) {
                 const sender = peersList[peerId].call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
                 if (sender) sender.replaceTrack(screenTrack);
@@ -410,7 +394,6 @@ function stopScreenSharing() {
     showToast('Đã dừng chia sẻ màn hình');
 }
 
-// Leave Room
 btnLeaveRoom.addEventListener('click', () => {
     if (confirm('Bạn có chắc muốn rời phòng họp?')) {
         leaveRoom();
@@ -425,10 +408,9 @@ function leaveRoom() {
         peer.destroy();
     }
     clearInterval(timerInterval);
-    window.location.href = window.location.pathname; // Reload to home
+    window.location.href = window.location.pathname;
 }
 
-// Sidebar & Chat Toggle
 btnToggleSidebar.addEventListener('click', () => {
     sidebarPanel.classList.toggle('hidden');
     if (!sidebarPanel.classList.contains('hidden')) {
@@ -441,7 +423,6 @@ btnCloseSidebar.addEventListener('click', () => {
     sidebarPanel.classList.add('hidden');
 });
 
-// Sending Chat
 function sendChatMessage() {
     const text = chatInput.value.trim();
     if (!text) return;
@@ -449,8 +430,6 @@ function sendChatMessage() {
     appendChatMessage(myName, text, 'mine');
     chatInput.value = '';
 
-    // Broadcast chat to all connected peers via data connections or peer connections
-    // In PeerJS, we can open data connection if available or send data
     for (let peerId in peersList) {
         const conn = peer.connect(peerId);
         conn.on('open', () => {
@@ -475,23 +454,20 @@ function appendChatMessage(sender, text, type) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-// Participants List Update
 function updateParticipantsList() {
     participantsList.innerHTML = '';
     
-    // Add self
     const selfItem = document.createElement('li');
     selfItem.className = 'participant-item';
     selfItem.innerHTML = `
         <div class="participant-avatar">${getInitials(myName)}</div>
         <div class="participant-info">
             <span class="participant-name">${myName} (Bạn)</span>
-            <span class="participant-role">Host / Thành viên</span>
+            <span class="participant-role">${isHost ? 'Host' : 'Thành viên'}</span>
         </div>
     `;
     participantsList.appendChild(selfItem);
 
-    // Add remote peers
     let count = 1;
     for (let peerId in peersList) {
         count++;
@@ -510,7 +486,6 @@ function updateParticipantsList() {
     participantCount.textContent = count;
 }
 
-// Timer
 function updateMeetingTimer() {
     const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
     const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
@@ -518,7 +493,6 @@ function updateMeetingTimer() {
     meetingTimer.textContent = `${mins}:${secs}`;
 }
 
-// Share Modal
 btnCopyLink.addEventListener('click', () => {
     shareModal.classList.remove('hidden');
 });
@@ -533,7 +507,6 @@ btnCopyModalLink.addEventListener('click', () => {
     showToast('Đã sao chép đường dẫn mời vào bộ nhớ tạm!', 'fa-solid fa-clipboard-check');
 });
 
-// Theme Toggle (Fun feature)
 let themeIndex = 0;
 const themes = [
     { name: 'GenZ Purple', primary: '#8B5CF6', pink: '#FF4FA3', cyan: '#22D3EE' },
