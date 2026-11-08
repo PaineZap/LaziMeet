@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaziMeet - Họp trực tuyến Gen Z</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PeerJS for WebRTC signaling -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Background Floating Shapes -->
+    <div class="bg-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+    </div>
+
+    <!-- HOME SCREEN -->
+    <div id="home-screen" class="screen active">
+        <div class="hero-container">
+            <!-- Header / Navbar -->
+            <header class="navbar">
+                <div class="logo-container">
+                    <div class="logo-icon">
+                        <i class="fa-solid fa-bolt-lightning"></i>
+                    </div>
+                    <span class="logo-text">Lazi<span>Meet</span></span>
+                </div>
+                <div class="nav-badge">
+                    <span class="pulse-dot"></span> Gen Z Connected
+                </div>
+            </header>
+
+            <!-- Main Hero Card -->
+            <main class="hero-content">
+                <div class="hero-text-side">
+                    <h1 class="hero-title">Họp siêu vui, <br>kết nối <span class="gradient-text">cực đỉnh</span>!</h1>
+                    <p class="hero-subtitle">Nền tảng họp trực tuyến miễn phí, giao diện Gen Z đầy màu sắc. Không cần cài đặt, không cần đăng ký — chỉ 1 click là vào phòng ngay.</p>
+                    <div class="hero-features">
+                        <div class="feature-tag"><i class="fa-solid fa-shield-halved"></i> Bảo mật WebRTC</div>
+                        <div class="feature-tag"><i class="fa-solid fa-bolt"></i> Siêu tốc & Miễn phí</div>
+                        <div class="feature-tag"><i class="fa-solid fa-wand-magic-sparkles"></i> Không cần backend</div>
+                    </div>
+                </div>
+
+                <div class="hero-card glass-card">
+                    <div class="card-tabs">
+                        <button class="tab-btn active" data-tab="create">Tạo phòng mới</button>
+                        <button class="tab-btn" data-tab="join">Tham gia phòng</button>
+                    </div>
+
+                    <!-- Create Room Form -->
+                    <div id="create-tab" class="tab-content active">
+                        <div class="form-group">
+                            <label for="creator-name"><i class="fa-solid fa-user"></i> Tên của bạn</label>
+                            <input type="text" id="creator-name" placeholder="Ví dụ: Nam Phong GenZ" autocomplete="off">
+                        </div>
+                        <button id="btn-create-room" class="btn btn-primary ripple">
+                            <i class="fa-solid fa-video"></i> Tạo phòng ngay
+                        </button>
+                    </div>
+
+                    <!-- Join Room Form -->
+                    <div id="join-tab" class="tab-content">
+                        <div class="form-group">
+                            <label for="join-name"><i class="fa-solid fa-user"></i> Tên của bạn</label>
+                            <input type="text" id="join-name" placeholder="Ví dụ: Thảo My" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="room-code-input"><i class="fa-solid fa-key"></i> Mã phòng hoặc Link</label>
+                            <input type="text" id="room-code-input" placeholder="Nhập mã phòng (VD: lazimeet-xyz)" autocomplete="off">
+                        </div>
+                        <button id="btn-join-room" class="btn btn-secondary ripple">
+                            <i class="fa-solid fa-right-to-bracket"></i> Vào phòng họp
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- MEETING ROOM SCREEN -->
+    <div id="meeting-screen" class="screen">
+        <!-- Top Info Bar -->
+        <header class="meeting-header">
+            <div class="meeting-brand">
+                <div class="logo-icon-small">
+                    <i class="fa-solid fa-bolt-lightning"></i>
+                </div>
+                <span class="meeting-title-logo">LaziMeet</span>
+                <span class="divider">|</span>
+                <span id="current-room-badge" class="room-badge">Phòng: Đang tải...</span>
+            </div>
+            
+            <div class="meeting-top-actions">
+                <button id="btn-copy-link" class="top-btn" title="Sao chép đường dẫn mời">
+                    <i class="fa-solid fa-link"></i> <span>Copy Link</span>
+                </button>
+                <button id="btn-toggle-sidebar" class="top-btn" title="Mở danh sách / Chat">
+                    <i class="fa-solid fa-comments"></i> <span id="badge-unread" class="badge-count">0</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Video Grid Area -->
+        <div class="meeting-body">
+            <div id="video-grid" class="video-grid">
+                <!-- Local Video Card -->
+                <div class="video-card" id="local-video-container">
+                    <video id="local-video" autoplay muted playsinline></video>
+                    <div class="video-overlay">
+                        <span class="user-tag" id="local-user-label">Bạn (Đang kết nối...)</span>
+                        <div class="status-icons">
+                            <i id="mic-status-icon" class="fa-solid fa-microphone"></i>
+                            <i id="cam-status-icon" class="fa-solid fa-video"></i>
+                        </div>
+                    </div>
+                    <div class="avatar-fallback" id="local-avatar-fallback">
+                        <span id="local-avatar-initials">U</span>
+                    </div>
+                </div>
+                <!-- Remote video cards will be injected dynamically here -->
+            </div>
+
+            <!-- Sidebar Panel (Chat & Participants) -->
+            <aside id="sidebar-panel" class="sidebar-panel hidden">
+                <div class="sidebar-header">
+                    <div class="sidebar-tabs">
+                        <button class="side-tab active" data-target="chat-section">
+                            <i class="fa-solid fa-comment-dots"></i> Trò chuyện
+                        </button>
+                        <button class="side-tab" data-target="participants-section">
+                            <i class="fa-solid fa-users"></i> Thành viên (<span id="participant-count">1</span>)
+                        </button>
+                    </div>
+                    <button id="btn-close-sidebar" class="close-side-btn"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <!-- Chat Section -->
+                <div id="chat-section" class="sidebar-content active">
+                    <div id="chat-messages" class="chat-messages">
+                        <div class="chat-welcome-msg">
+                            <i class="fa-solid fa-sparkles"></i> Chào mừng bạn đến phòng chat LaziMeet! Hãy nhắn gì đó thật vui vẻ nhé.
+                        </div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chat-input" placeholder="Nhập tin nhắn..." autocomplete="off">
+                        <button id="btn-send-chat" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                    </div>
+                </div>
+
+                <!-- Participants Section -->
+                <div id="participants-section" class="sidebar-content">
+                    <ul id="participants-list" class="participants-list">
+                        <!-- Dynamically populated -->
+                    </ul>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Bottom Control Toolbar -->
+        <footer class="meeting-toolbar">
+            <div class="toolbar-left">
+                <span id="meeting-timer" class="meeting-timer">00:00</span>
+            </div>
+
+            <div class="toolbar-center">
+                <button id="btn-toggle-mic" class="control-btn active" title="Bật/Tắt Mic">
+                    <i class="fa-solid fa-microphone"></i>
+                </button>
+                <button id="btn-toggle-cam" class="control-btn active" title="Bật/Tắt Camera">
+                    <i class="fa-solid fa-video"></i>
+                </button>
+                <button id="btn-share-screen" class="control-btn" title="Chia sẻ màn hình">
+                    <i class="fa-solid fa-desktop"></i>
+                </button>
+                <button id="btn-leave-room" class="control-btn danger" title="Rời phòng">
+                    <i class="fa-solid fa-phone-slash"></i>
+                </button>
+            </div>
+
+            <div class="toolbar-right">
+                <button id="btn-toggle-theme" class="control-btn secondary-control" title="Đổi màu giao diện">
+                    <i class="fa-solid fa-palette"></i>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Share Modal -->
+    <div id="share-modal" class="modal-overlay hidden">
+        <div class="modal-card glass-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-share-nodes"></i> Mời bạn bè tham gia</h3>
+                <button id="btn-close-modal" class="close-modal-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p>Gửi đường dẫn này cho bạn bè để cùng vào phòng họp LaziMeet:</p>
+            <div class="copy-box">
+                <input type="text" id="share-link-input" readonly>
+                <button id="btn-copy-modal-link" class="btn btn-primary"><i class="fa-solid fa-copy"></i> Sao chép</button>
+            </div>
+            <div class="modal-footer">
+                <span class="modal-note"><i class="fa-solid fa-circle-info"></i> Phòng hoạt động qua PeerJS Cloud hoàn toàn miễn phí.</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
